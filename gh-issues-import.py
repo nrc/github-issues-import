@@ -31,6 +31,7 @@ http_error_messages[401] = "ERROR: There was a problem during authentication.\nD
 http_error_messages[403] = http_error_messages[401]; # Basically the same problem. GitHub returns 403 instead to prevent abuse.
 http_error_messages[404] = "ERROR: Unable to find the specified repository.\nDouble check the spelling for the source and target repositories. If either repository is private, make sure the specified user is allowed access to it."
 
+close_message = "This issue has been moved to the RFCs repo: %s#%s"
 
 def init_config():
 	
@@ -323,6 +324,8 @@ def import_issues(issues):
 		
 		new_issue = {}
 		new_issue['title'] = issue['title']
+		new_issue['number'] = issue['number']
+		#new_issue['labels'] = ['A-servo']
 		
 		# Temporary fix for marking closed issues
 		if issue['closed_at']:
@@ -361,7 +364,11 @@ def import_issues(issues):
 		template_data['date'] = format_date(issue['created_at'])
 		template_data['url'] =  issue['html_url']
 		template_data['body'] = issue['body']
-		
+
+		template_data['labels'] = ''
+		if issue['labels']:
+			template_data['labels'] = ", ".join(map(lambda l: l['name'], issue['labels']))
+	
 		if "pull_request" in issue and issue['pull_request']['html_url'] is not None:
 			new_issue['body'] = format_pull_request(template_data)
 		else:
@@ -391,7 +398,6 @@ def import_issues(issues):
 	
 	result_issues = []
 	for issue in new_issues:
-		
 		if 'milestone_object' in issue:
 			issue['milestone'] = issue['milestone_object']['number']
 			del issue['milestone_object']
@@ -404,6 +410,16 @@ def import_issues(issues):
 			del issue['label_objects']
 		
 		result_issue = send_request('target', "issues", issue)
+
+		# leave a closing message
+		comment = {}
+		comment['body'] = close_message%(config.get('target', 'repository'), result_issue['number'])
+		send_request('source', "issues/%s/comments" % issue['number'], comment)
+		# close the issue
+		close_issue = {}
+		close_issue['state'] = 'closed'
+		send_request('source', "issues/%s" % issue['number'], close_issue)
+
 		print("Successfully created issue '%s'" % result_issue['title'])
 		
 		if 'comments' in issue:
